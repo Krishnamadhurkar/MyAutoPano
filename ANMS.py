@@ -53,10 +53,8 @@ def ANMS (image, N_best):
     cv.destroyAllWindows
     return features
 
-   
 
-
-def featureVector(image,corners):
+def featurevector(image,corners):
     image = cv.cvtColor(image,cv.COLOR_BGR2GRAY)
 
     # Apply Gaussian blur for all the corner points
@@ -72,20 +70,48 @@ def featureVector(image,corners):
         res_patch = cv.resize(patch,(8,8))
         vector = np.resize(res_patch,(64,1))  # feature vector 64x1
         # Standardization of the vector: subtract the vector by its mean, and then divide the result by the vector's standard deviation.
-        std_featurevector[(row,col)] = (vector-np.mean(vector))/np.std(vector)
+        std_featurevector[(col,row)] = (vector-np.mean(vector))/np.std(vector)
+   
     return std_featurevector
 
-# def FeatureMatching(features1,features2):
-#     correspondence_list = []
-#     # get the coordinate values and norm value of the vector if they are under a threshold
-#     for i in features1:
-#         norm_list = []
-#         for j in features2:
-#             norm_list.append((i,j,np.linalg.norm(features1[i]-features2[j])))
-#         norm_list.sort(key = lambda X:X[1])
-#     print(norm_list)
-#     return 0
 
+
+def FeatureMatching(features1,features2,threshold):
+    correspondence_list = [] # tuple of keypoints of image 1 and 2 that are a match
+    # get the coordinate values and norm value of the vector if they are under a threshold
+    for i in features1:
+        norm_list = []
+        for j in features2:
+            norm_list.append((j, np.linalg.norm(features1[i]-features2[j])))
+        norm_list.sort(key = lambda X:X[1])
+        if ((norm_list[0][1])/norm_list[1][1])<threshold:
+            correspondence_list.append([i,norm_list[0][0]])
+        #    # edge case : On next step check if the list has more than 4 matches for random sampling during RANSAC
+    # correspondence_list = False
+    return correspondence_list
+
+
+def Drawmatches(image1, image2, loc1,loc2):
+    # color image
+    dim = (max(image1.shape[0], image2.shape[0]), image1.shape[1]+image2.shape[1], image1.shape[2]) # dimensions of new image that has bothe im1 and im2 joined horizontally
+    match_image = np.zeros(dim,type(image1.flat[0]))
+    # join the images horizontally
+    match_image[0:image1.shape[0],0:image1.shape[1]] = image1
+    match_image[0:image2.shape[0],image1.shape[1]:image1.shape[1]+image2.shape[1]] = image2
+    # and draw lines between the matching pairs (x1,y1)  to (x2,y2)
+    for i in  range(len(loc1)):
+        x1 = loc1[i][0]
+        y1 = loc1[i][1]
+        x2 = loc2[i][0] + int(image1.shape[1]) # horizontal shift
+        y2 = loc2[i][1]
+        cv.line(match_image,(x1,y1),(x2,y2),(0,255,255),1)
+    cv.imshow('image',match_image)
+    cv.waitKey(0)
+    cv.destroyAllWindows
+    return None
+
+def Homography(keypoints1,keypoints2, threshold):
+    pass
 
 
 
@@ -93,8 +119,15 @@ Image1 = cv.imread('1.jpg')
 Image2 = cv.imread('2.jpg')
 x1 = ANMS(Image1,500)
 x2 = ANMS(Image2,500)
-f1 = featureVector(Image1,x1)  # key: feature point location and values: 64x1 std vector
-f2 = featureVector(Image1,x2)  # features of image 2
+f1 = featurevector(Image1,x1)  # key: feature point location and values: 64x1 std vector
+f2 = featurevector(Image2,x2)  # features of image 2
+z = FeatureMatching(f1,f2,threshold =0.5)
+Loc1 = []
+Loc2 = []
+for i in z:
+    Loc1.append(i[0])  # Location of keypoints in image 1
+    Loc2.append(i[1])
+Image1 = cv.imread('1.jpg') 
+Image2 = cv.imread('2.jpg')
+k =  Drawmatches(Image1,Image2,Loc1,Loc2)
 
-z = FeatureMatching(f1,f2, threshold = 0.5)
-print(len(z[0]))  # 500 matched pairs change the threshold
