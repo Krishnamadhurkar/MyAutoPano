@@ -1,9 +1,10 @@
 
+from pickle import FALSE
 import cv2 as cv
 import numpy as np
 from matplotlib import pyplot as plt
 from tqdm import tqdm
-
+import sys
 
 def ANMS (image, N_best):
     Gray_image = cv.cvtColor(image,cv.COLOR_BGR2GRAY)
@@ -110,24 +111,97 @@ def Drawmatches(image1, image2, loc1,loc2):
     cv.destroyAllWindows
     return None
 
+
+
 def Homography(keypoints1,keypoints2, threshold):
-    pass
+    # Estimate Homography matrix between the two images
+    # use RANSAC
+    if len(keypoints1)>=4 and len(keypoints2) >=4:
+        max_iter = 10# just run the loop enough to get correct homograhy matrix
+        flag = True # Use flag to make sure that there are atleast four inliers to sample 
+        max_inlier = 0
+        for iterations in tqdm(range(max_iter)):
+            rand_idx = np.random.randint(len(keypoints1),size = 4) # four random indices of feature pairs
+            #Copy the points from keypoints1 and kepoints2 for image 1 and 2 to temporary variables
+            pts1 = np.zeros((len(rand_idx),2),dtype=np.float32)
+            pts2 = np.zeros((len(rand_idx),2),dtype=np.float32)
+            for i in range(len(rand_idx)):
+                pts1[i][1] = keypoints1[rand_idx[i]][1]
+                pts1[i][0] = keypoints1[rand_idx[i]][0]
+                pts2[i][1] = keypoints2[rand_idx[i]][1]
+                pts2[i][0] = keypoints2[rand_idx[i]][0]
+            H_matrix,Mask = cv.findHomography(pts1,pts2)  # calculate homography matrix
+            # Compute inliers where SSD(pts2[i],H*Pts1[i])< some user defined τhreshold
+            inlier_count = 0
+            matched_pts1 = []
+            matched_pts2 = []
+            for i in range(len(keypoints1)):
+                # Transformation is calculated from A to B
+                A = np.array([keypoints1[i][0],keypoints1[i][1],1])
+                B = np.array([keypoints2[i][0],keypoints2[i][1],1])
+                # Predict B using H.A  # Matrix multplication, transformation
+                try:
+                    predicted_B = np.matmul(H_matrix, A)  # Sometime value of A become close to NaN
+                except:
+                    break
+
+                predicted_B = predicted_B/predicted_B[2] # normalize the coordinates
+            
+            
+                # Using the prediction, check if the point is inlier or not
+                if (np.linalg.norm(B-predicted_B)< threshold):
+                    # if SSD less than threshold 
+                    matched_pts1.append(A)
+                    matched_pts2.append(B)
+                    inlier_count+=1
+
+            if inlier_count> max_inlier:
+                max_inlier = inlier_count
+                Best_H = H_matrix
+                Pts1  = matched_pts1
+                Pts2 =matched_pts2
+        # count inliers
+        if max_inlier<=4:
+            flag = False
+        final_pts1 = np.zeros((max_inlier,2),dtype=np.float32) 
+        final_pts2 = np.zeros((max_inlier,2),dtype=np.float32)
+        for i in range(max_inlier):
+            final_pts1[i][0] = Pts1[i][0]
+            final_pts1[i][1] = Pts1[i][1]
+            final_pts2[i][0] = Pts2[i][0]
+            final_pts2[i][1] = Pts2[i][1]
+        Best_H, Mask = cv.findHomography(final_pts1,final_pts2)
+                 
+    else:
+        print("Not enough keypoints to calculate Homography")
+        sys.exit()
+   
+
+    return final_pts1,final_pts2, Best_H, flag
 
 
 
-Image1 = cv.imread('1.jpg') 
-Image2 = cv.imread('2.jpg')
-x1 = ANMS(Image1,500)
-x2 = ANMS(Image2,500)
-f1 = featurevector(Image1,x1)  # key: feature point location and values: 64x1 std vector
-f2 = featurevector(Image2,x2)  # features of image 2
-z = FeatureMatching(f1,f2,threshold =0.5)
-Loc1 = []
-Loc2 = []
-for i in z:
-    Loc1.append(i[0])  # Location of keypoints in image 1
-    Loc2.append(i[1])
-Image1 = cv.imread('1.jpg') 
-Image2 = cv.imread('2.jpg')
-k =  Drawmatches(Image1,Image2,Loc1,Loc2)
+def main():
+    Image1 = cv.imread('1.jpg') 
+    Image2 = cv.imread('2.jpg')
+    x1 = ANMS(Image1,500)
+    x2 = ANMS(Image2,500)
+    f1 = featurevector(Image1,x1)  # key: feature point location and values: 64x1 std vector
+    f2 = featurevector(Image2,x2)  # features of image 2
+    z = FeatureMatching(f1,f2,threshold =0.8)
+    Loc1 = []
+    Loc2 = []
+    for i in z:
+        Loc1.append(i[0])  # Location of keypoints in image 1
+        Loc2.append(i[1])
+    Image1 = cv.imread('1.jpg') 
+    Image2 = cv.imread('2.jpg')
+    k =  Drawmatches(Image1,Image2,Loc1,Loc2)
+    [f1,f2,H,flag] = Homography(Loc1,Loc2,threshold = 1.5)
+    print(flag)
+    
 
+
+
+if __name__ == '__main__':
+    main()
